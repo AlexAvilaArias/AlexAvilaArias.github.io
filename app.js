@@ -1,8 +1,20 @@
 // Portable hosting: resolve assets and the thank-you page from this script's location.
 const portfolioBaseUrl = new URL('./', document.currentScript.src);
+const portfolioLanguage = window.PortfolioLanguage || {
+  current: 'es',
+  t: (source) => source,
+  text(target, source, values = {}) {
+    if (target) target.textContent = source.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
+  },
+  attribute(target, name, source, values = {}) {
+    target?.setAttribute(name, source.replace(/\{(\w+)\}/g, (match, key) => values[key] ?? match));
+  }
+};
 const contactRedirect = document.querySelector('[data-contact-form] input[name="_next"]');
 if (contactRedirect) {
-  contactRedirect.value = new URL('gracias/index.html', portfolioBaseUrl).href;
+  const redirectUrl = new URL('gracias/index.html', portfolioBaseUrl);
+  redirectUrl.searchParams.set('lang', portfolioLanguage.current);
+  contactRedirect.value = redirectUrl.href;
   contactRedirect.disabled = false;
 }
 
@@ -84,11 +96,13 @@ const navDock = menuToggle?.closest('.nav-dock');
 menuToggle?.addEventListener('click', () => {
   const opening = menuToggle.getAttribute('aria-expanded') !== 'true';
   menuToggle.setAttribute('aria-expanded', String(opening));
+  portfolioLanguage.attribute(menuToggle, 'aria-label', opening ? 'Cerrar menú' : 'Abrir menú');
   navDock?.classList.toggle('is-open', opening);
 });
 navDock?.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => {
   navDock.classList.remove('is-open');
   menuToggle?.setAttribute('aria-expanded', 'false');
+  portfolioLanguage.attribute(menuToggle, 'aria-label', 'Abrir menú');
 }));
 
 // The hero archive is randomized on each load and rebuilt as three seamless rows.
@@ -242,7 +256,7 @@ personalToggle?.addEventListener('click', () => {
   const card = personalToggle.closest('[data-personal-card]');
   const opening = personalToggle.getAttribute('aria-expanded') !== 'true';
   personalToggle.setAttribute('aria-expanded', String(opening));
-  personalToggle.firstChild.textContent = opening ? 'Cerrar modo personal ' : 'Abrir modo personal ';
+  portfolioLanguage.text(personalToggle.firstChild, opening ? 'Cerrar modo personal ' : 'Abrir modo personal ');
   if (target) target.hidden = !opening;
   card?.classList.toggle('is-open', opening);
 });
@@ -258,17 +272,17 @@ if (speakerGallery) {
     const label = document.createElement('span');
     const itemNumber = String(index + 1).padStart(3, '0');
     const speakerNumber = String(Math.floor(index / 2) + 1).padStart(2, '0');
-    const type = index % 2 === 0 ? 'Presentación' : 'Reseña';
+    const introduction = index % 2 === 0;
     figure.className = 'speaker-card';
     image.src = new URL(`assets/speakers/speaker-${itemNumber}.webp`, portfolioBaseUrl).href;
     image.dataset.fullsrc = new URL(`assets/speakers/full/speaker-${itemNumber}.webp`, portfolioBaseUrl).href;
-    image.alt = `${type} de ponente ${speakerNumber}`;
+    portfolioLanguage.attribute(image, 'alt', introduction ? 'Presentación de ponente {number}' : 'Reseña de ponente {number}', { number: speakerNumber });
     image.width = 460;
     image.height = 460;
     image.loading = index < 8 ? 'eager' : 'lazy';
     image.decoding = 'async';
     image.dataset.lightbox = '';
-    label.textContent = `${speakerNumber} · ${type}`;
+    portfolioLanguage.text(label, introduction ? '{number} · Presentación' : '{number} · Reseña', { number: speakerNumber });
     figure.append(image, label);
     fragment.append(figure);
   }
@@ -441,7 +455,7 @@ function updateCaseChapter(chapter) {
   const nameElement = document.querySelector('[data-step-name]');
   const progress = document.querySelector('.case-progress i');
   if (numberElement) numberElement.textContent = number;
-  if (nameElement) nameElement.textContent = name;
+  portfolioLanguage.text(nameElement, name);
   if (progress) progress.style.width = `${((index + 1) / caseChapters.length) * 100}%`;
   caseLinks.forEach((link) => {
     if (link.dataset.caseLink === chapter.id) link.setAttribute('aria-current', 'step');
@@ -485,10 +499,23 @@ function openLightbox(image) {
   document.body.classList.add('is-modal');
 }
 
-document.querySelectorAll('img[data-lightbox]').forEach((image) => {
+const lightboxTriggers = [...document.querySelectorAll('img[data-lightbox]')];
+const refreshLightboxLabels = () => {
+  lightboxTriggers.forEach((image) => image.setAttribute('aria-label', `${image.alt}. ${portfolioLanguage.t('Abrir vista ampliada.')}`));
+  if (lightbox?.open) {
+    const source = lightboxTriggers.find((image) => (image.dataset.fullsrc || image.currentSrc || image.src) === lightboxImage.src);
+    if (source) {
+      lightboxImage.alt = source.alt;
+      lightboxCaption.textContent = source.closest('figure')?.querySelector('figcaption')?.textContent || source.alt;
+    }
+  }
+};
+refreshLightboxLabels();
+window.addEventListener('portfolio:languagechange', refreshLightboxLabels);
+
+lightboxTriggers.forEach((image) => {
   image.tabIndex = 0;
   image.setAttribute('role', 'button');
-  image.setAttribute('aria-label', `${image.alt}. Abrir vista ampliada.`);
   image.addEventListener('click', () => openLightbox(image));
   image.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -534,7 +561,11 @@ document.querySelectorAll('[data-case-open]').forEach((trigger) => {
     caseWindow.style.setProperty('--case-y', `${y}px`);
     caseWindow.classList.remove('is-closing');
     caseWindow.classList.toggle('is-loaded', caseFrame.dataset.loaded === 'true');
-    if (!caseFrame.hasAttribute('src')) caseFrame.src = new URL('caso-ipa/index.html?embedded=1', portfolioBaseUrl).href;
+    if (!caseFrame.hasAttribute('src')) {
+      const frameUrl = new URL('caso-ipa/index.html?embedded=1', portfolioBaseUrl);
+      frameUrl.searchParams.set('lang', portfolioLanguage.current);
+      caseFrame.src = frameUrl.href;
+    }
     caseWindow.showModal();
     document.body.classList.add('is-modal');
   });
@@ -543,6 +574,7 @@ document.querySelectorAll('[data-case-open]').forEach((trigger) => {
 caseFrame?.addEventListener('load', () => {
   if (!caseFrame.hasAttribute('src')) return;
   caseFrame.dataset.loaded = 'true';
+  try { caseFrame.contentWindow?.PortfolioLanguage?.setLanguage(portfolioLanguage.current, { sync: false, updateUrl: true }); } catch (_) { /* Same-origin case only. */ }
   caseWindow?.classList.add('is-loaded');
 });
 caseWindow?.querySelectorAll('[data-window-target]').forEach((link) => link.addEventListener('click', (event) => {
@@ -587,8 +619,8 @@ if (embeddedCase) {
     try {
       void Promise.resolve(context.registerTool({
         name: 'show_portfolio_capability',
-        title: 'Mostrar capacidad del portafolio',
-        description: 'Abre una capacidad profesional en la sección interactiva del portafolio y la lleva a la vista.',
+        title: portfolioLanguage.t('Mostrar capacidad del portafolio'),
+        description: portfolioLanguage.t('Abre una capacidad profesional en la sección interactiva del portafolio y la lleva a la vista.'),
         inputSchema: {
           type: 'object',
           properties: { capability: { type: 'string', enum: ['design', 'video', 'social', 'web', 'events'] } },
@@ -598,7 +630,7 @@ if (embeddedCase) {
         annotations: { readOnlyHint: true, untrustedContentHint: false },
         execute(input) {
           const index = capabilityTabs.findIndex((tab) => tab.dataset.capability === input?.capability);
-          if (index < 0) throw new Error('Capacidad no válida.');
+          if (index < 0) throw new Error(portfolioLanguage.t('Capacidad no válida.'));
           activateCapability(index);
           document.getElementById('capacidades')?.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
           return { capability: input.capability, visible: true };
@@ -611,8 +643,8 @@ if (embeddedCase) {
     try {
       void Promise.resolve(context.registerTool({
         name: 'show_case_chapter',
-        title: 'Mostrar capítulo del caso IPA',
-        description: 'Navega a un capítulo específico del caso del XX Congreso IPA y actualiza el indicador visible.',
+        title: portfolioLanguage.t('Mostrar capítulo del caso IPA'),
+        description: portfolioLanguage.t('Navega a un capítulo específico del caso del XX Congreso IPA y actualiza el indicador visible.'),
         inputSchema: {
           type: 'object',
           properties: { chapter: { type: 'string', enum: ['identidad', 'ponentes', 'salas', 'materiales', 'web', 'cobertura', 'lima', 'cusco'] } },
@@ -622,7 +654,7 @@ if (embeddedCase) {
         annotations: { readOnlyHint: true, untrustedContentHint: false },
         execute(input) {
           const chapter = document.getElementById(input?.chapter);
-          if (!chapter?.matches('.case-chapter')) throw new Error('Capítulo no válido.');
+          if (!chapter?.matches('.case-chapter')) throw new Error(portfolioLanguage.t('Capítulo no válido.'));
           updateCaseChapter(chapter);
           chapter.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
           return { chapter: input.chapter, visible: true };
