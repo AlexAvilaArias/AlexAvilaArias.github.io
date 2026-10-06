@@ -5,10 +5,11 @@ export function repeatCount(viewportWidth, patternWidth) {
 }
 
 function mountMarquees() {
+  const clone = (node) => window.PortfolioLanguage?.clone(node) || node.cloneNode(true);
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   document.querySelectorAll('[data-marquee]').forEach((marquee) => {
     const track = marquee.querySelector('.marquee-track');
-    const seed = marquee.querySelector('.marquee-group').cloneNode(true);
+    const seed = clone(marquee.querySelector('.marquee-group'));
     let animation;
     let duration = 1;
     let observedWidth = 0;
@@ -17,16 +18,17 @@ function mountMarquees() {
     const build = () => {
       const phase = animation ? (Number(animation.currentTime || 0) % duration) / duration : 0;
       animation?.cancel();
-      const group = seed.cloneNode(true);
+      const group = clone(seed);
+      window.PortfolioLanguage?.translate(group);
       track.replaceChildren(group);
       const width = group.getBoundingClientRect().width;
       const repeats = repeatCount(marquee.clientWidth, width);
       for (let index = 1; index < repeats; index += 1) {
-        [...seed.children].forEach((child) => group.append(child.cloneNode(true)));
+        [...group.children].slice(0, seed.children.length).forEach((child) => group.append(clone(child)));
       }
       const distance = group.getBoundingClientRect().width;
       if (!distance) return;
-      track.append(group.cloneNode(true));
+      track.append(clone(group));
       observedWidth = marquee.clientWidth;
       duration = (distance / Number(marquee.dataset.speed || 48)) * 1000;
       track.style.setProperty('--marquee-distance', `${-distance}px`);
@@ -52,6 +54,7 @@ function mountMarquees() {
       }).observe(marquee);
     } else window.addEventListener('resize', scheduleBuild, { passive: true });
     document.fonts?.ready.then(scheduleBuild);
+    window.addEventListener('portfolio:languagechange', scheduleBuild);
     if (reducedMotion.addEventListener) reducedMotion.addEventListener('change', scheduleBuild);
     else reducedMotion.addListener(scheduleBuild);
     document.addEventListener('visibilitychange', () => {
@@ -135,6 +138,10 @@ function shuffled(items) {
 }
 
 function mountPieceGame() {
+  const language = window.PortfolioLanguage || {
+    text(target, source, values = {}) { target.textContent = source.replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match); },
+    attribute(target, name, source) { target.setAttribute(name, source); }
+  };
   const root = document.querySelector('[data-piece-game]');
   if (!root) return;
   const image = root.querySelector('[data-game-image]');
@@ -155,9 +162,9 @@ function mountPieceGame() {
     const piece = deck[index];
     root.classList.remove('is-solved');
     image.src = piece.image;
-    image.alt = piece.alt;
-    client.textContent = piece.client;
-    counter.textContent = `Pieza ${index + 1} / ${deck.length}`;
+    language.attribute(image, 'alt', piece.alt);
+    language.text(client, piece.client);
+    language.text(counter, 'Pieza {number} / {total}', { number: index + 1, total: deck.length });
     progress.value = index;
     feedback.textContent = '';
     feedback.removeAttribute('data-tone');
@@ -166,7 +173,7 @@ function mountPieceGame() {
     shuffled(piece.options.map((label, option) => ({ label, option }))).forEach(({ label, option }) => {
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = label;
+      language.text(button, label);
       button.addEventListener('click', () => {
         const answer = game.answer(option);
         if (!answer) return;
@@ -174,17 +181,17 @@ function mountPieceGame() {
           button.disabled = true;
           button.classList.add('is-wrong');
           feedback.dataset.tone = 'hint';
-          feedback.textContent = piece.hint;
+          language.text(feedback, piece.hint);
           choices.querySelector('button:not(:disabled)')?.focus({ preventScroll: true });
           return;
         }
         button.classList.add('is-correct');
         choices.querySelectorAll('button').forEach((choice) => { choice.disabled = true; });
         feedback.dataset.tone = 'success';
-        feedback.textContent = piece.detail;
+        language.text(feedback, piece.detail);
         root.classList.add('is-solved');
         progress.value = index + 1;
-        next.firstChild.textContent = index === deck.length - 1 ? 'Ver resultado ' : 'Siguiente pieza ';
+        language.text(next.firstChild, index === deck.length - 1 ? 'Ver resultado ' : 'Siguiente pieza ');
         next.hidden = false;
         next.focus({ preventScroll: true });
       });
